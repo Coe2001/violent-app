@@ -1,66 +1,57 @@
 import streamlit as st
-from utils import download_video, extract_frames, load_model_from_pickle
+from utils import download_video, extract_frames, load_model_from_pickle, preprocess_frame
 import tempfile
 import os
 import numpy as np
-import cv2
 
-# Load pre-trained model
-model = load_model_from_pickle('violence_model.pkl')  # Update path as needed
+# Load model only once during the app initialization
+@st.cache_resource
+def load_model():
+    return load_model_from_pickle("violence_model.pkl")
 
-def predict_violence(video_url):
+model = load_model()
+
+def predict_violence(video_path):
     """
-    Predict violence in the video using pre-trained model
+    Predict violence in a video using the pre-trained model.
+    Args:
+    - video_path: Path to the video file.
+    
+    Returns:
+    - Prediction result (e.g., violence detected or not).
     """
-    # Download the video from URL
-    with tempfile.NamedTemporaryFile(delete=False) as temp_video:
-        temp_video.close()
-        # Pass both URL and the destination path
-        download_video(video_url, temp_video.name)
-        
-        # Extract frames from the video
-        frames = extract_frames(temp_video.name)
-        
-        # Process frames to get predictions
-        results = []
-        for frame in frames:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB for model
-            frame = cv2.resize(frame, (224, 224))  # Resize to match model input size
-            frame = np.expand_dims(frame, axis=0)  # Add batch dimension
-            prediction = model.predict(frame)  # Get model prediction
-            results.append(prediction)
+    frames = extract_frames(video_path)
+    predictions = []
+    
+    # Preprocess each frame and make predictions
+    for frame in frames:
+        processed_frame = preprocess_frame(frame)
+        prediction = model.predict(processed_frame)
+        predictions.append(prediction)
 
-        return results
+    # Return the most frequent prediction (violence or no violence)
+    result = max(set(predictions), key=predictions.count)
+    return "Violence Detected" if result == 1 else "No Violence Detected"
 
-def display_results(results):
-    """
-    Display the final verdict based on predictions
-    """
-    if results:
-        # Flatten results and find the most frequent prediction (violent or non-violent)
-        flattened_results = [item for sublist in results for item in sublist]
-        final_verdict = max(set(flattened_results), key=flattened_results.count)
-        st.write("✅ Final Verdict:", final_verdict)
-    else:
-        st.write("❌ No results to display.")
+# Streamlit UI
+st.title("Violence Detection in Video")
+st.write("Upload a video to analyze and predict if there is any violence detected in it.")
 
-def main():
-    """
-    Main function to run the Streamlit app
-    """
-    st.title("Violence Detection in Videos")
-    st.write("Enter the video URL to check for violence content")
+# File upload widget
+video_file = st.file_uploader("Upload Video", type=["mp4", "avi", "mov"])
 
-    # Input field for video URL
-    video_url = st.text_input("Video URL", "")
+if video_file:
+    # Save the uploaded video to a temporary file
+    temp_video_file = tempfile.NamedTemporaryFile(delete=False)
+    temp_video_file.write(video_file.read())
+    video_path = temp_video_file.name
+    st.video(video_path)  # Display the video
 
-    if video_url:
-        # Process video and predict
-        st.write("Processing the video... This may take a while.")
-        results = predict_violence(video_url)
-
-        # Display results
-        display_results(results)
-
-if __name__ == "__main__":
-    main()
+    # Button to trigger the prediction
+    if st.button("Predict Violence"):
+        with st.spinner("Processing video..."):
+            result = predict_violence(video_path)
+            st.write(f"✅ Final Verdict: {result}")
+            
+    # Clean up the temporary file after prediction
+    os.remove(video_path)
