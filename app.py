@@ -15,6 +15,7 @@ def predict_violence(video_url):
     # Download the video from URL
     with tempfile.NamedTemporaryFile(delete=False) as temp_video:
         temp_video.close()
+        # Pass both URL and the destination path
         download_video(video_url, temp_video.name)
         
         # Extract frames from the video
